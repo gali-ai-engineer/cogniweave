@@ -78,6 +78,22 @@ def _cmd_memory(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ui(args: argparse.Namespace) -> int:
+    from .ui.server import export_demo, serve
+
+    if args.export:
+        out = export_demo(args.export)
+        print(f"Recorded demo written to {out}/ (index.html + replay.json). Host that folder, e.g. on GitHub Pages.")
+        return 0
+    serve(
+        args.host,
+        args.port,
+        memory_path=None if args.no_memory else Path(args.memory),
+        open_browser=not args.no_browser,
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cogniweave", description="Multi-agent orchestration & cognitive architecture"
@@ -96,6 +112,15 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--trace-out", default=None, help="write the full trace as JSON")
     run.add_argument("--mermaid", action="store_true", help="print a Mermaid sequence diagram of the run")
     run.set_defaults(func=_cmd_run)
+
+    ui = sub.add_parser("ui", help="open the live web UI in your browser")
+    ui.add_argument("--host", default="127.0.0.1")
+    ui.add_argument("--port", type=int, default=8765)
+    ui.add_argument("--memory", default=str(DEFAULT_MEMORY), help="path to persistent memory JSON")
+    ui.add_argument("--no-memory", action="store_true", help="keep memory in this session only")
+    ui.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+    ui.add_argument("--export", metavar="DIR", help="record demo runs into DIR for static hosting, then exit")
+    ui.set_defaults(func=_cmd_ui)
 
     mem = sub.add_parser("memory", help="inspect learned lessons and strategy statistics")
     mem.add_argument("--memory", default=str(DEFAULT_MEMORY))

@@ -1,0 +1,821 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cogniweave</title>
+<meta name="description" content="Watch a team of AI agents plan, research, critique and learn, live.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232C3BA8'/%3E%3Cpath d='M8 11h16M8 21h16' stroke='%23F3F5F7' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M12 7v18M20 7v18' stroke='%23C99A1E' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --paper: #F3F5F7;
+  --paper-2: #E8ECF1;
+  --ink: #1D2433;
+  --ink-2: #4A5468;
+  --ink-3: #7A8396;
+  --rule: #D5DBE3;
+  --indigo: #2C3BA8;
+  --woad: #1C7A6C;
+  --logwood: #6E4596;
+  --cutch: #8C4E22;
+  --madder: #A82B37;
+  --weld: #B8860B;
+  --focus: #2C3BA8;
+  --serif: "Palatino Linotype", Palatino, "Book Antiqua", "Iowan Old Style", "URW Palladio L", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #161B26;
+    --paper-2: #1F2533;
+    --ink: #E4E8F0;
+    --ink-2: #B3BACA;
+    --ink-3: #828BA0;
+    --rule: #2E3646;
+    --indigo: #8C9AF0;
+    --woad: #4FC2AE;
+    --logwood: #B48AE0;
+    --cutch: #D99A62;
+    --madder: #F07A84;
+    --weld: #E8C15A;
+    --focus: #8C9AF0;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.5 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+h1, h2, h3, h4, h5 { font-family: var(--serif); font-weight: 600; margin: 0; letter-spacing: 0.005em; }
+h2 { font-size: 1.2rem; }
+p { margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+
+/* ---------- top bar ---------- */
+.bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px;
+  padding: 14px 24px; border-bottom: 1px solid var(--rule); background: var(--paper);
+  position: sticky; top: 0; z-index: 5;
+}
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); }
+.brand h1 { font-size: 1.45rem; font-weight: 600; }
+.brand small { color: var(--ink-3); font-size: 0.85rem; }
+.controls[hidden] { display: none; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1 1 520px; justify-content: flex-end; }
+.controls input[type=text] {
+  flex: 1 1 320px; min-width: 200px; padding: 8px 12px; border: 1px solid var(--rule);
+  border-radius: 8px; background: var(--paper-2);
+}
+.controls select { padding: 8px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-2); }
+.btn {
+  padding: 8px 16px; border-radius: 8px; border: 1px solid var(--indigo); background: var(--indigo);
+  color: var(--paper); font-weight: 600; cursor: pointer;
+}
+.btn[disabled] { opacity: 0.55; cursor: progress; }
+.btn.quiet { background: transparent; color: var(--ink-2); border-color: var(--rule); font-weight: 500; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---------- layout ---------- */
+main { padding: 0 24px 48px; max-width: 1440px; margin: 0 auto; }
+section { padding: 22px 0 0; }
+.notice {
+  margin: 18px 0 0; padding: 12px 16px; border-left: 3px solid var(--weld); background: var(--paper-2);
+  color: var(--ink-2); border-radius: 0 8px 8px 0;
+}
+.notice code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.88em; color: var(--ink); }
+.notice.error { border-left-color: var(--madder); color: var(--ink); }
+
+/* ---------- the loom (hero) ---------- */
+.loom-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin-bottom: 10px; }
+#status { color: var(--ink-2); flex: 1 1 320px; }
+#status strong { color: var(--ink); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--ink-3); font-size: 0.85rem; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.loom-scroll { overflow-x: auto; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+#loom { display: block; width: 100%; min-width: 680px; }
+#loom text { font-family: var(--sans); }
+#loom .lane-name { font-size: 13px; font-weight: 600; }
+#loom .lane-role { font-size: 11px; fill: var(--ink-3); }
+#loom .axis { font-size: 11px; fill: var(--ink-3); }
+#loom .verdict { font-size: 11px; font-weight: 600; }
+#loom .running { animation: breathe 1.4s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: 0.55; } }
+
+/* ---------- panels ---------- */
+.grid3 { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 0 36px; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 0 48px; }
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.explain { color: var(--ink-3); font-size: 0.9rem; margin-bottom: 12px; max-width: 62ch; }
+.empty { color: var(--ink-3); font-size: 0.92rem; padding: 8px 0; max-width: 52ch; }
+
+/* plan graph */
+.dag { display: flex; align-items: stretch; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.wave { display: flex; flex-direction: column; justify-content: center; gap: 8px; min-width: 150px; flex: 1 1 0; }
+.link { align-self: center; color: var(--ink-3); }
+.node {
+  border: 1px solid var(--rule); border-radius: 10px; padding: 8px 10px; background: var(--paper);
+  border-left: 4px solid var(--c, var(--ink-3)); font-size: 0.88rem; transition: background 0.3s;
+}
+.node b { font-weight: 600; }
+.node p { color: var(--ink-2); font-size: 0.82rem; margin-top: 2px; }
+.node p.desc { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.node .st { float: right; font-size: 0.78rem; color: var(--ink-3); }
+.node.running { background: var(--paper-2); }
+.node.running .st { color: var(--c); font-weight: 600; }
+.node.done .st { color: var(--ink-2); }
+.rounds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; align-items: center; font-size: 0.88rem; color: var(--ink-2); }
+.pill { padding: 2px 9px; border-radius: 999px; border: 1px solid currentColor; font-size: 0.82rem; font-weight: 600; }
+.pill.revise { color: var(--madder); }
+.pill.accept { color: var(--woad); }
+.review-log { margin-top: 14px; border-top: 1px solid var(--rule); padding-top: 10px; }
+.review-log h3 { font-size: 1rem; margin-bottom: 6px; }
+.review-log ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.review-log li { font-size: 0.86rem; color: var(--ink-2); }
+.review-log .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.review-log .counts { color: var(--ink-3); }
+.review-log .counts b { color: var(--ink); font-weight: 600; }
+.review-log .issue { display: block; margin-top: 2px; padding-left: 10px; border-left: 2px solid var(--rule); }
+.review-log .issue.fixed { color: var(--woad); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--woad) 45%, transparent); }
+.review-log .issue.open { color: var(--madder); }
+.review-log .issue.added { color: var(--weld); }
+.verdict-note { margin: 0 0 14px; padding: 10px 14px; border-left: 3px solid var(--madder); background: var(--paper-2); border-radius: 0 8px 8px 0; font-size: 0.92rem; max-width: 72ch; }
+.verdict-note.ok { border-left-color: var(--woad); }
+.verdict-note ul { margin: 4px 0 0; padding-left: 1.1em; }
+ol.schedule { margin: 0; padding-left: 1.4em; display: grid; gap: 4px; }
+ol.schedule li::marker { color: var(--ink-3); }
+ol.schedule .act { color: var(--ink-3); font-size: 0.84rem; }
+.debate-round { margin-bottom: 10px; }
+.debate-round h4 { font-size: 0.95rem; margin-bottom: 4px; }
+.debate-round li { font-size: 0.88rem; color: var(--ink-2); }
+.debate-round ul { margin: 0; padding-left: 1.1em; }
+
+/* board */
+ol.board { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; }
+ol.board li { padding: 8px 0; border-bottom: 1px solid var(--rule); font-size: 0.88rem; }
+ol.board li:first-child.fresh { animation: arrive 0.8s ease-out; }
+@keyframes arrive { from { background: var(--paper-2); } }
+.kind { font-weight: 600; margin-right: 6px; }
+.who { color: var(--ink-3); }
+.preview { color: var(--ink-2); margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* memory */
+ul.lessons { list-style: none; margin: 0 0 14px; padding: 0; }
+ul.lessons li { padding: 8px 10px 8px 12px; border-left: 3px solid var(--weld); background: var(--paper-2); border-radius: 0 8px 8px 0; margin-bottom: 8px; font-size: 0.88rem; }
+ul.lessons .who { display: block; font-size: 0.8rem; }
+ul.lessons li.new { box-shadow: inset 0 0 0 1px var(--weld); }
+table.strat { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+table.strat td { padding: 5px 0; vertical-align: middle; border-bottom: 1px solid var(--rule); }
+table.strat td:first-child { color: var(--ink-3); width: 76px; }
+.bar-track { height: 6px; background: var(--rule); border-radius: 3px; margin-top: 4px; }
+.bar-fill { height: 100%; border-radius: 3px; background: var(--indigo); }
+table.strat .num { text-align: right; color: var(--ink-2); width: 64px; }
+
+/* report */
+.report article { max-width: 72ch; font-size: 1rem; line-height: 1.62; }
+.report article h3 { font-size: 1.55rem; line-height: 1.25; margin: 6px 0 12px; }
+.report article h4 { font-size: 1.12rem; margin: 20px 0 6px; }
+.report article h5 { font-size: 1rem; margin: 14px 0 4px; }
+.report article ul { padding-left: 1.2em; margin: 0 0 6px; }
+.report article li { margin-bottom: 6px; }
+.report article p { margin-bottom: 10px; }
+.cite {
+  display: inline-block; font-size: 0.74em; line-height: 1.4; padding: 0 6px; margin-left: 2px;
+  border-radius: 4px; background: var(--paper-2); color: var(--woad); border: 1px solid var(--rule);
+  vertical-align: 0.12em; white-space: nowrap;
+}
+.draft-tag { color: var(--weld); font-weight: 600; font-size: 0.88rem; }
+dl.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; margin: 6px 0 18px; }
+dl.stats div { border-top: 2px solid var(--rule); padding-top: 6px; }
+dl.stats dt { color: var(--ink-3); font-size: 0.84rem; }
+dl.stats dd { margin: 0; font-family: var(--serif); font-size: 1.6rem; line-height: 1.2; }
+table.usage { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+table.usage th, table.usage td { text-align: right; padding: 5px 0 5px 8px; border-bottom: 1px solid var(--rule); }
+table.usage th { color: var(--ink-3); font-weight: 500; }
+table.usage th:first-child, table.usage td:first-child { text-align: left; padding-left: 0; }
+details.mermaid-out { margin-top: 16px; font-size: 0.86rem; color: var(--ink-2); }
+details.mermaid-out pre { white-space: pre-wrap; background: var(--paper-2); padding: 10px; border-radius: 8px; max-height: 240px; overflow: auto; font-size: 0.78rem; }
+footer { color: var(--ink-3); font-size: 0.84rem; padding: 28px 24px 36px; max-width: 1440px; margin: 0 auto; border-top: 1px solid var(--rule); }
+footer a { color: var(--ink-2); }
+
+@media (max-width: 1100px) {
+  .grid3 { grid-template-columns: 1fr 1fr; }
+  .grid3 > :first-child { grid-column: 1 / -1; }
+  .grid2 { grid-template-columns: 1fr; }
+}
+@media (max-width: 680px) {
+  .bar, main { padding-left: 16px; padding-right: 16px; }
+  .bar { position: static; }
+  .controls > * { flex: 1 1 100%; }
+  .grid3 { grid-template-columns: 1fr; }
+  .controls { justify-content: stretch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #loom .running, ol.board li:first-child.fresh { animation: none; }
+}
+</style>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="https://github.com/gali-ai-engineer/cogniweave" aria-label="cogniweave on GitHub">
+    <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--indigo)"/><path d="M8 11h16M8 21h16" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"/><path d="M12 7v18M20 7v18" stroke="var(--weld)" stroke-width="3" stroke-linecap="round"/></svg>
+    <span><h1>cogniweave</h1></span>
+  </a>
+
+  <form class="controls" id="liveControls" hidden>
+    <label class="visually-hidden" for="question">Question for the team</label>
+    <input type="text" id="question" autocomplete="off" required>
+    <label class="visually-hidden" for="pattern">How the team is organised</label>
+    <select id="pattern">
+      <option value="hierarchical">Planner and workers</option>
+      <option value="blackboard">Shared blackboard</option>
+      <option value="debate">Debate</option>
+      <option value="sequential">Pipeline</option>
+    </select>
+    <label class="visually-hidden" for="provider">Model</label>
+    <select id="provider">
+      <option value="mock">Offline mock model</option>
+      <option value="anthropic">Claude (Anthropic)</option>
+      <option value="openai">OpenAI</option>
+      <option value="ollama">Ollama (local)</option>
+    </select>
+    <label class="visually-hidden" for="speed">Speed</label>
+    <select id="speed" title="Adds a short delay to each mock model call so you can follow along">
+      <option value="watchable">Watchable speed</option>
+      <option value="fast">Fast</option>
+      <option value="instant">Instant</option>
+    </select>
+    <button class="btn" id="runBtn" type="submit">Run the team</button>
+  </form>
+
+  <form class="controls" id="replayControls" hidden>
+    <label class="visually-hidden" for="runSel">Recorded run</label>
+    <select id="runSel"></select>
+    <label class="visually-hidden" for="rate">Playback speed</label>
+    <select id="rate">
+      <option value="1">1× speed</option>
+      <option value="2">2× speed</option>
+      <option value="4">4× speed</option>
+    </select>
+    <button class="btn" id="playBtn" type="submit">Play</button>
+  </form>
+</header>
+
+<main>
+  <div id="notice"></div>
+
+  <section aria-labelledby="loomTitle">
+    <div class="loom-head">
+      <h2 id="loomTitle">Who is working</h2>
+      <p id="status" aria-live="polite">Ask the team a question to start.</p>
+      <div class="legend" aria-hidden="true">
+        <span><svg width="26" height="10"><rect x="1" y="1" width="24" height="8" rx="4" fill="var(--ink-2)"/></svg>agent working</span>
+        <span><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="var(--paper)" stroke="var(--ink-2)" stroke-width="1.5"/></svg>tool call</span>
+        <span><svg width="26" height="10"><path d="M1 9 C10 9 16 1 25 1" stroke="var(--ink-2)" stroke-width="1.2" fill="none"/></svg>hand-off</span>
+        <span><svg width="12" height="12"><path d="M6 1 L11 6 L6 11 L1 6 Z" fill="var(--weld)"/></svg>lesson learned</span>
+      </div>
+    </div>
+    <div class="loom-scroll"><svg id="loom" role="img" aria-label="Timeline of agent activity"></svg></div>
+  </section>
+
+  <div class="grid3">
+    <section aria-labelledby="planTitle">
+      <h2 id="planTitle">How the work is organised</h2>
+      <p class="explain" id="planExplain"></p>
+      <div id="plan"></div>
+    </section>
+    <section aria-labelledby="boardTitle">
+      <h2 id="boardTitle">Shared board</h2>
+      <p class="explain">Everything the agents post: questions, findings, drafts and critiques.</p>
+      <ol class="board" id="board"></ol>
+    </section>
+    <section aria-labelledby="memTitle">
+      <div class="panel-head">
+        <h2 id="memTitle">What the team remembers</h2>
+        <button class="btn quiet" id="resetMem" type="button" hidden>Clear memory</button>
+      </div>
+      <p class="explain">Lessons from past critiques, and which working style scores best for each role.</p>
+      <div id="memory"></div>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section class="report" aria-labelledby="answerTitle">
+      <h2 id="answerTitle">Answer</h2>
+      <article id="report"><p class="empty">The team's answer appears here, with a source on every claim.</p></article>
+    </section>
+    <section aria-labelledby="costTitle">
+      <h2 id="costTitle">Cost of this run</h2>
+      <dl class="stats" id="stats"></dl>
+      <div id="usage"></div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  cogniweave is a multi-agent orchestration and cognitive architecture project by
+  <a href="https://github.com/gali-ai-engineer">Bala Ajay Kumar Reddy Gali</a>.
+  Source and docs: <a href="https://github.com/gali-ai-engineer/cogniweave">github.com/gali-ai-engineer/cogniweave</a>.
+</footer>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const DEFAULT_Q = "What are the trade-offs between multi-agent and single-agent LLM systems?";
+
+const ROLE_COLOR = {
+  planner: "--indigo", researcher: "--woad", analyst: "--logwood", writer: "--cutch", critic: "--madder",
+  judge: "--cutch", advocate: "--woad", skeptic: "--madder", pragmatist: "--indigo",
+};
+const colorOf = (agent) => `var(${ROLE_COLOR[agent?.name] || ROLE_COLOR[agent?.role] || "--ink-2"})`;
+const PATTERN_TEXT = {
+  hierarchical: "The planner splits the question into tasks. Tasks without dependencies run at the same time, then the critic reviews the answer.",
+  blackboard: "There is no fixed plan. On each turn, the agent with the strongest reason to act goes next, based on what is on the board.",
+  debate: "Three agents with different viewpoints argue from the same evidence and answer each other, then a judge decides.",
+  sequential: "Each agent hands its work straight to the next. This is the simple baseline the other patterns are compared with.",
+};
+const KIND_COLOR = {
+  goal: "--ink-2", plan: "--indigo", question: "--indigo", finding: "--woad", result: "--woad", analysis: "--logwood",
+  draft: "--cutch", critique: "--madder", argument: "--indigo", verdict: "--cutch",
+};
+
+let S = blankState();
+function blankState() {
+  return {
+    running: false, pattern: "hierarchical", question: "", agents: [], spans: new Map(), board: [], notes: [],
+    lessonsLive: [], memory: null, result: null, error: null, plan: null, critiques: [], calls: 0,
+    lastT: 0, lastWall: performance.now(), clock: null, freshBoard: false,
+  };
+}
+const nowT = () => (S.clock ? S.clock() : S.lastT);
+
+// ------------------------------------------------------------ events
+function handleEvent(ev) {
+  if (ev.type === "run_start") {
+    const clock = S.clock;
+    S = blankState();
+    S.clock = clock;
+    S.running = true;
+    Object.assign(S, { pattern: ev.pattern, question: ev.question, agents: ev.agents, memory: ev.memory });
+  }
+  if (typeof ev.t === "number") { S.lastT = Math.max(S.lastT, ev.t); S.lastWall = performance.now(); }
+  switch (ev.type) {
+    case "span_start":
+      S.spans.set(ev.id, { ...ev });
+      if (ev.name === "llm.complete") S.calls += 1;
+      break;
+    case "span_end":
+      S.spans.set(ev.id, { ...(S.spans.get(ev.id) || {}), ...ev });
+      break;
+    case "event":
+      S.notes.push(ev);
+      if (ev.attrs?.kind === "reflection") S.lessonsLive.push({ agent: ev.agent, text: ev.attrs.lesson });
+      break;
+    case "board": {
+      const e = ev.entry;
+      e.t = ev.t;
+      S.board.push(e);
+      S.freshBoard = true;
+      if (e.kind === "plan") { try { S.plan = JSON.parse(e.content); } catch (_) { /* ignore */ } }
+      if (e.kind === "critique") { try { S.critiques.push({ ...JSON.parse(e.content), t: ev.t, author: e.author }); } catch (_) { /* ignore */ } }
+      break;
+    }
+    case "result":
+      S.result = ev; S.memory = ev.memory; if (ev.plan) S.plan = ev.plan;
+      break;
+    case "error":
+      S.error = ev.message;
+      break;
+    case "done":
+      S.running = false;
+      break;
+  }
+  requestRender();
+}
+
+// ------------------------------------------------------------ rendering
+let renderQueued = false;
+function requestRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; renderAll(); if (S.running) requestRender(); });
+}
+function renderAll() {
+  renderLoom(); renderStatus(); renderPlan(); renderBoard(); renderMemory(); renderReport(); renderStats();
+}
+
+function agentRuns() { return [...S.spans.values()].filter((s) => s.name === "agent.run"); }
+
+function renderLoom() {
+  const svg = $("loom");
+  const agents = S.agents.length ? S.agents : [];
+  const laneH = 46, trackGap = 18, top = 10, axisH = 26, labelW = 132;
+  const width = Math.max(680, svg.parentElement.clientWidth);
+  // pack overlapping runs of the same agent onto separate tracks so parallel work is visible
+  const runs = agentRuns().sort((a, b) => a.start - b.start);
+  const trackOf = new Map(), tracks = new Map();
+  for (const a of agents) {
+    const ends = [];
+    for (const r of runs.filter((x) => x.agent === a.name)) {
+      let k = ends.findIndex((e) => e <= r.start + 0.001);
+      if (k === -1) { k = ends.length; ends.push(0); }
+      ends[k] = r.end ?? Infinity;
+      trackOf.set(r.id, k);
+    }
+    tracks.set(a.name, Math.max(1, ends.length));
+  }
+  const laneTop = new Map();
+  let acc = top;
+  for (const a of agents) { laneTop.set(a.name, acc); acc += laneH + (tracks.get(a.name) - 1) * trackGap; }
+  const height = (agents.length ? acc : top + laneH) + axisH;
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("height", height);
+  if (!agents.length) {
+    svg.innerHTML = `<text x="12" y="${top + laneH / 2 + 4}" fill="var(--ink-3)" font-size="13">Each agent gets a thread here. Its work is drawn along it as the run happens.</text>`;
+    return;
+  }
+  const now = nowT();
+  const tMax = Math.max(now, S.lastT, 3) * 1.04;
+  const plotW = width - labelW - 20;
+  const X = (t) => labelW + (t / tMax) * plotW;
+  const laneOf = new Map(agents.map((a, i) => [a.name, i]));
+  const Y = (name, track) => {
+    const n = tracks.get(name) || 1;
+    const centre = (laneTop.get(name) ?? top) + (laneH + (n - 1) * trackGap) / 2;
+    return track == null ? centre : centre + (track - (n - 1) / 2) * trackGap;
+  };
+  const agentBy = new Map(agents.map((a) => [a.name, a]));
+  let out = "";
+
+  // axis ticks
+  const steps = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
+  const step = steps.find((s) => tMax / s <= 8) || 600;
+  for (let t = 0; t <= tMax; t += step) {
+    const x = X(t);
+    out += `<line x1="${x}" y1="${top}" x2="${x}" y2="${height - axisH + 4}" stroke="var(--rule)" stroke-width="1"/>`;
+    out += `<text class="axis" x="${x}" y="${height - 8}" text-anchor="middle">${t === 0 ? "0" : (step < 1 ? t.toFixed(1) : t)}s</text>`;
+  }
+
+  // warp threads and lane labels
+  agents.forEach((a) => {
+    const y = Y(a.name), c = colorOf(a);
+    for (let k = 0; k < tracks.get(a.name); k++) {
+      const yk = Y(a.name, k);
+      out += `<line x1="${labelW - 6}" y1="${yk}" x2="${width - 12}" y2="${yk}" stroke="${c}" stroke-opacity="0.28" stroke-width="1.5"/>`;
+    }
+    out += `<text class="lane-name" x="12" y="${y - 2}" fill="${c}">${esc(a.name)}</text>`;
+    if (a.role !== a.name) out += `<text class="lane-role" x="12" y="${y + 13}">${esc(a.role)}</text>`;
+  });
+
+  // weft: hand-offs from the last finished agent to each new run
+  for (const r of runs) {
+    let from = null;
+    for (const c of runs) {
+      if (c.agent === r.agent || c.end == null || c.end > r.start + 0.02) continue;
+      if (!from || c.end > from.end) from = c;
+    }
+    if (!from || !laneOf.has(from.agent) || !laneOf.has(r.agent)) continue;
+    const x1 = X(from.end), y1 = Y(from.agent, trackOf.get(from.id)), x2 = X(r.start), y2 = Y(r.agent, trackOf.get(r.id));
+    const dx = Math.max(18, (x2 - x1) / 2);
+    out += `<path d="M${x1} ${y1} C${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}" fill="none" stroke="var(--ink-2)" stroke-opacity="0.42" stroke-width="1.2"/>`;
+  }
+
+  // woven segments: agent runs
+  for (const r of runs) {
+    if (!laneOf.has(r.agent)) continue;
+    const a = agentBy.get(r.agent), c = colorOf(a), y = Y(r.agent, trackOf.get(r.id));
+    const x1 = X(r.start), x2 = X(r.end ?? now);
+    const live = r.end == null;
+    const task = r.attrs?.task || "";
+    const conf = r.attrs?.confidence != null ? `, confidence ${r.attrs.confidence}` : "";
+    out += `<rect class="${live ? "running" : ""}" x="${x1}" y="${y - 7}" width="${Math.max(5, x2 - x1)}" height="14" rx="7" fill="${c}"${r.status === "error" ? ' stroke="var(--madder)" stroke-width="2"' : ""}><title>${esc(r.agent)}: ${esc(task)}${conf}</title></rect>`;
+  }
+
+  // tool calls
+  for (const s of S.spans.values()) {
+    if (s.attrs?.kind !== "tool" || !laneOf.has(s.agent)) continue;
+    out += `<circle cx="${X(s.start)}" cy="${Y(s.agent, trackOf.get(s.parent_id))}" r="4" fill="var(--paper)" stroke="${colorOf(agentBy.get(s.agent))}" stroke-width="2"><title>${esc(s.attrs.tool)}</title></circle>`;
+  }
+
+  // reflections
+  for (const n of S.notes) {
+    if (n.attrs?.kind !== "reflection" || !laneOf.has(n.agent)) continue;
+    const x = X(n.t), y = Y(n.agent, 0) - 15;
+    out += `<path d="M${x} ${y - 6} L${x + 6} ${y} L${x} ${y + 6} L${x - 6} ${y} Z" fill="var(--weld)"><title>Lesson: ${esc(n.attrs.lesson)}</title></path>`;
+  }
+
+  // critique verdicts
+  for (const cr of S.critiques) {
+    if (!laneOf.has(cr.author)) continue;
+    const ok = cr.verdict === "accept";
+    const nearEdge = X(cr.t) > width - 90;
+    out += `<text class="verdict" text-anchor="${nearEdge ? "end" : "start"}" x="${X(cr.t) + (nearEdge ? -6 : 6)}" y="${Y(cr.author, 0) - 12}" fill="var(${ok ? "--woad" : "--madder"})">${Number(cr.score).toFixed(2)} ${ok ? "accept" : "revise"}</text>`;
+  }
+
+  // the present moment
+  if (S.running) {
+    out += `<line x1="${X(now)}" y1="${top - 4}" x2="${X(now)}" y2="${height - axisH + 4}" stroke="var(--indigo)" stroke-width="1" stroke-dasharray="3 3"/>`;
+  }
+  svg.innerHTML = out;
+}
+
+function renderStatus() {
+  const el = $("status");
+  if (S.error) { el.innerHTML = `<strong>Run stopped.</strong> ${esc(S.error)}`; return; }
+  if (!S.agents.length) { el.textContent = "Ask the team a question to start."; return; }
+  if (S.running) {
+    const active = agentRuns().filter((r) => r.end == null);
+    if (!active.length) { el.innerHTML = `<strong>Coordinating.</strong> Handing work to the next agent.`; return; }
+    const counts = {};
+    active.forEach((r) => { counts[r.agent] = (counts[r.agent] || 0) + 1; });
+    const names = Object.entries(counts).map(([n, k]) => (k > 1 ? `${n} (${k} tasks in parallel)` : n));
+    el.innerHTML = `<strong>Working now:</strong> ${esc(names.join(", "))}`;
+    return;
+  }
+  const r = S.result;
+  if (!r) { el.textContent = "Finished."; return; }
+  const revs = `${r.revisions} revision${r.revisions === 1 ? "" : "s"}`;
+  const open = (r.extra?.unresolved_issues || []).length;
+  let review = "";
+  if (r.review && open) review = ` <strong>Not accepted:</strong> score ${Number(r.review.score).toFixed(2)} after ${revs}, ${open} issue${open === 1 ? "" : "s"} still open.`;
+  else if (r.review) review = ` Accepted with score ${Number(r.review.score).toFixed(2)} after ${revs}.`;
+  el.innerHTML = `<strong>Finished in ${r.elapsed_s} s</strong> with ${r.totals.llm_calls} model calls.${review}`;
+}
+
+function taskStatus(desc) {
+  const key = desc.slice(0, 100);
+  const runs = agentRuns().filter((r) => (r.attrs?.task || "").startsWith(key));
+  if (runs.some((r) => r.end == null)) return "running";
+  if (runs.length) return "done";
+  return "pending";
+}
+
+const issueKey = (s) => String(s).toLowerCase().replace(/\d+/g, "#").slice(0, 60);
+function reviewLog() {
+  const log = [];
+  for (let i = 1; i < S.critiques.length; i++) {
+    const before = new Map(S.critiques[i - 1].issues.map((x) => [issueKey(x), x]));
+    const after = new Map(S.critiques[i].issues.map((x) => [issueKey(x), x]));
+    log.push({
+      n: i,
+      from: S.critiques[i - 1].score,
+      to: S.critiques[i].score,
+      fixed: [...before].filter(([k]) => !after.has(k)).map(([, v]) => v),
+      open: [...after].filter(([k]) => before.has(k)).map(([, v]) => v),
+      added: [...after].filter(([k]) => !before.has(k)).map(([, v]) => v),
+    });
+  }
+  return log;
+}
+function renderReviewLog() {
+  if (!S.critiques.length) return "";
+  const first = S.critiques[0];
+  const pill = (c) => `<span class="pill ${c.verdict === "accept" ? "accept" : "revise"}">${Number(c.score).toFixed(2)} ${c.verdict === "accept" ? "accepted" : "sent back"}</span>`;
+  const issues = (list, cls) => list.map((x) => `<span class="issue ${cls}">${esc(x)}</span>`).join("");
+  const rows = [`<li><div class="row"><b>First draft</b> ${pill(first)}</div>${issues(first.issues, "open")}</li>`];
+  reviewLog().forEach((r, i) => {
+    const counts = `<span class="counts">fixed <b>${r.fixed.length}</b>, still open <b>${r.open.length}</b>, new <b>${r.added.length}</b></span>`;
+    const stalled = !r.fixed.length && r.to <= r.from ? ` <span class="pill revise">fixed nothing, stopped</span>` : "";
+    rows.push(`<li><div class="row"><b>Revision ${r.n}</b> ${pill(S.critiques[i + 1])} ${counts}${stalled}</div>${issues(r.fixed, "fixed")}${issues(r.open, "open")}${issues(r.added, "added")}</li>`);
+  });
+  return `<div class="review-log"><h3>Critic review</h3><ol>${rows.join("")}</ol></div>`;
+}
+
+function renderPlan() {
+  $("planExplain").textContent = PATTERN_TEXT[S.pattern] || "";
+  const el = $("plan");
+  if (!S.agents.length) { el.innerHTML = ""; return; }
+  if (S.pattern === "hierarchical") {
+    if (!S.plan) { el.innerHTML = `<p class="empty">The plan appears here once the planner has written it.</p>`; return; }
+    const tasks = S.plan.tasks, level = {};
+    const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
+    const lv = (t) => level[t.id] ?? (level[t.id] = 1 + Math.max(-1, ...t.depends_on.map((d) => (byId[d] ? lv(byId[d]) : -1))));
+    tasks.forEach(lv);
+    const waves = [];
+    tasks.forEach((t) => (waves[level[t.id]] = waves[level[t.id]] || []).push(t));
+    const label = { pending: "waiting", running: "working", done: "done" };
+    const html = waves.map((w) => `<div class="wave">${w.map((t) => {
+      const st = taskStatus(t.description);
+      const after = t.depends_on.length ? `after ${t.depends_on.join(", ")}` : "starts right away";
+      return `<div class="node ${st}" style="--c:${colorOf({ role: t.role })}"><span class="st">${label[st]}</span><b>${esc(t.id)}</b> ${esc(t.role)}<p class="desc" title="${esc(t.description)}">${esc(t.description)}</p><p>${esc(after)}</p></div>`;
+    }).join("")}</div>`).join(`<span class="link" aria-hidden="true"><svg width="18" height="12"><path d="M1 6h14M11 2l4 4-4 4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg></span>`);
+    el.innerHTML = `<div class="dag">${html}</div>${renderReviewLog()}`;
+  } else if (S.pattern === "blackboard") {
+    const picks = S.notes.filter((n) => n.name === "schedule").map((n) => {
+      const m = /cycle (\d+) (\S+) a=([\d.]+)/.exec(n.attrs?.text || "");
+      return m ? { who: m[2], a: m[3] } : null;
+    }).filter(Boolean);
+    el.innerHTML = picks.length
+      ? `<ol class="schedule">${picks.map((p) => `<li><b style="color:${colorOf({ name: p.who === "decomposer" ? "planner" : p.who })}">${esc(p.who)}</b> <span class="act">strongest reason to act (${esc(p.a)})</span></li>`).join("")}</ol>`
+      : `<p class="empty">Each turn's choice appears here.</p>`;
+    el.innerHTML += renderReviewLog();
+  } else if (S.pattern === "debate") {
+    const args = S.board.filter((e) => e.kind === "argument");
+    const rounds = {};
+    args.forEach((e) => { const r = (e.tags || []).find((t) => t.startsWith("round-")) || "round-1"; (rounds[r] = rounds[r] || []).push(e); });
+    const html = Object.keys(rounds).sort().map((r) => `<div class="debate-round"><h4>Round ${esc(r.split("-")[1])}</h4><ul>${rounds[r].map((e) =>
+      `<li><b style="color:${colorOf({ name: e.author })}">${esc(e.author)}</b>: ${esc((e.content.split("\n")[0] || "").replace(/^POSITION:\s*/, ""))}</li>`).join("")}</ul></div>`).join("");
+    const verdict = S.board.find((e) => e.kind === "verdict");
+    el.innerHTML = (html || `<p class="empty">Arguments appear here round by round.</p>`) +
+      (verdict ? `<div class="rounds">Judge: <span class="pill accept">verdict delivered</span></div>` : "");
+  } else {
+    const runs = agentRuns().sort((a, b) => a.start - b.start);
+    el.innerHTML = runs.length
+      ? `<ol class="schedule">${runs.map((r) => `<li><b style="color:${colorOf({ name: r.agent })}">${esc(r.agent)}</b> <span class="act">${r.end == null ? "working" : "done"}</span></li>`).join("")}</ol>`
+      : `<p class="empty">Steps appear here in order.</p>`;
+  }
+}
+
+function plain(text) {
+  return String(text || "").replace(/```[\s\S]*?```/g, "[plan]").replace(/^#+\s*/gm, "").replace(/[*`]/g, "").replace(/\s+/g, " ").trim();
+}
+function renderBoard() {
+  const el = $("board");
+  if (!S.board.length) { el.innerHTML = `<li class="empty" style="border:0">Nothing posted yet.</li>`; return; }
+  const items = S.board.slice(-40).reverse();
+  el.innerHTML = items.map((e, i) => {
+    let preview = plain(e.content);
+    if (e.kind === "plan" && S.plan) preview = `${S.plan.tasks.length} tasks: ${S.plan.tasks.map((t) => t.id + " " + t.role).join(", ")}`;
+    if (e.kind === "critique") { try { const c = JSON.parse(e.content); preview = `score ${c.score}, ${c.verdict}. ${c.issues.join(" ")}`; } catch (_) { /* keep */ } }
+    const conf = e.kind === "goal" ? "" : ` <span class="who">confidence ${Number(e.confidence).toFixed(2)}</span>`;
+    return `<li class="${i === 0 && S.freshBoard ? "fresh" : ""}"><span class="kind" style="color:var(${KIND_COLOR[e.kind] || "--ink-2"})">${esc(e.kind)}</span><span class="who">by ${esc(e.author)}</span>${conf}<div class="preview">${esc(preview.slice(0, 220))}</div></li>`;
+  }).join("");
+  S.freshBoard = false;
+}
+
+function renderMemory() {
+  const el = $("memory");
+  const saved = S.memory?.lessons || [];
+  const seen = new Set(saved.map((l) => l.text));
+  const lessons = [...saved.map((l) => ({ ...l, isNew: false })), ...S.lessonsLive.filter((l) => !seen.has(l.text)).map((l) => ({ ...l, isNew: true }))];
+  const strategies = (S.memory?.strategies || []).filter((s) => s.mean != null);
+  let html = lessons.length
+    ? `<ul class="lessons">${lessons.map((l) => `<li class="${l.isNew ? "new" : ""}"><span class="who">${esc(l.agent)}${l.isNew ? ", learned in this run" : ""}</span>${esc(l.text)}</li>`).join("")}</ul>`
+    : `<p class="empty">No lessons yet. When the critic sends a draft back, the writer's lesson appears here and is reused in later runs.</p>`;
+  if (strategies.length) {
+    html += `<table class="strat"><tbody>${strategies.map((s) => `<tr><td>${esc(s.role)}</td><td>${esc(s.strategy)}<div class="bar-track"><div class="bar-fill" style="width:${Math.round(s.mean * 100)}%"></div></div></td><td class="num">${s.mean.toFixed(2)} avg<br>${s.n} use${s.n === 1 ? "" : "s"}</td></tr>`).join("")}</tbody></table>`;
+  }
+  el.innerHTML = html;
+}
+
+function inline(s) {
+  return esc(s)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]\s]+?\.md(?:#\d+)?)\]/g, (_, src) => `<span class="cite" title="Source: ${src}">${src}</span>`);
+}
+function md(src) {
+  let html = "", list = false;
+  for (const raw of String(src || "").split("\n")) {
+    const line = raw.trimEnd();
+    const bullet = /^\s*-\s+(.*)/.exec(line);
+    if (bullet) { if (!list) { html += "<ul>"; list = true; } html += `<li>${inline(bullet[1])}</li>`; continue; }
+    if (list) { html += "</ul>"; list = false; }
+    if (!line.trim()) continue;
+    const h = /^(#{1,4})\s+(.*)/.exec(line);
+    if (h) { const tag = ["h3", "h4", "h5", "h5"][h[1].length - 1]; html += `<${tag}>${inline(h[2])}</${tag}>`; }
+    else html += `<p>${inline(line)}</p>`;
+  }
+  return html + (list ? "</ul>" : "");
+}
+function renderReport() {
+  const el = $("report");
+  if (S.result) {
+    const open = S.result.extra?.unresolved_issues || [];
+    const note = !S.result.review ? ""
+      : open.length
+        ? `<div class="verdict-note"><strong>The critic did not accept this answer.</strong> The last revision could not fix:<ul>${open.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`
+        : `<div class="verdict-note ok"><strong>Accepted by the critic.</strong> ${S.result.revisions ? "Every issue it raised was fixed." : "It passed on the first draft."}</div>`;
+    el.innerHTML = note + md(S.result.answer);
+    return;
+  }
+  const draft = [...S.board].reverse().find((e) => ["draft", "verdict"].includes(e.kind) || (e.kind === "result" && (e.tags || []).includes("writer")));
+  if (draft) { el.innerHTML = `<p class="draft-tag">Draft in progress, not yet reviewed</p>${md(draft.content)}`; return; }
+  el.innerHTML = `<p class="empty">${S.running ? "The team is still working. The first draft appears here as soon as the writer posts it." : "The team's answer appears here, with a source on every claim."}</p>`;
+}
+
+function renderStats() {
+  const r = S.result;
+  const calls = r ? r.totals.llm_calls : S.calls;
+  const items = [
+    ["Model calls", calls || "0"],
+    ["Tokens", r ? r.totals.tokens.toLocaleString() : "…"],
+    ["Review score", r?.review ? Number(r.review.score).toFixed(2) : "–"],
+    ["Revisions", r ? r.revisions : "–"],
+  ];
+  $("stats").innerHTML = items.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("");
+  if (!r) { $("usage").innerHTML = ""; return; }
+  const rows = Object.entries(r.usage).sort();
+  $("usage").innerHTML = `<table class="usage"><thead><tr><th>Agent</th><th>Calls</th><th>Tokens in</th><th>Tokens out</th></tr></thead><tbody>${rows.map(([a, u]) =>
+    `<tr><td>${esc(a)}</td><td>${u.calls}</td><td>${u.input_tokens.toLocaleString()}</td><td>${u.output_tokens.toLocaleString()}</td></tr>`).join("")}</tbody></table>
+    <details class="mermaid-out"><summary>Trace as a Mermaid diagram</summary><pre>${esc(r.mermaid)}</pre></details>`;
+}
+
+// ------------------------------------------------------------ live mode
+let source = null;
+async function refreshMemory() {
+  try { const res = await fetch("/api/memory"); if (res.ok) { S.memory = await res.json(); S.lessonsLive = []; requestRender(); } } catch (_) { /* offline */ }
+}
+function setBusy(busy) { $("runBtn").disabled = busy; $("runBtn").textContent = busy ? "Team is working…" : "Run the team"; $("resetMem").disabled = busy; }
+function startLive(evt) {
+  evt.preventDefault();
+  if (source) return;
+  const q = $("question").value.trim() || DEFAULT_Q;
+  const params = new URLSearchParams({ question: q, pattern: $("pattern").value, provider: $("provider").value, speed: $("speed").value });
+  S.clock = () => S.lastT + (S.running ? (performance.now() - S.lastWall) / 1000 : 0);
+  setBusy(true);
+  $("notice").innerHTML = "";
+  source = new EventSource("/api/run?" + params);
+  source.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    handleEvent(ev);
+    if (ev.type === "error") showNotice(`The run stopped: ${esc(ev.message)}`, true);
+    if (ev.type === "done") { source.close(); source = null; setBusy(false); }
+  };
+  source.onerror = () => {
+    if (!source) return;
+    source.close(); source = null; setBusy(false);
+    if (S.running || !S.agents.length) {
+      S.running = false;
+      showNotice("The connection to the local server closed. If another run is still going, wait for it to finish. Otherwise check the terminal where <code>python -m cogniweave ui</code> is running.", true);
+    }
+  };
+}
+function showNotice(html, isError) { $("notice").innerHTML = `<p class="notice${isError ? " error" : ""}">${html}</p>`; }
+
+async function initLive() {
+  $("liveControls").hidden = false;
+  $("resetMem").hidden = false;
+  $("question").value = DEFAULT_Q;
+  $("liveControls").addEventListener("submit", startLive);
+  $("provider").addEventListener("change", () => { $("speed").disabled = $("provider").value !== "mock"; });
+  $("resetMem").addEventListener("click", async () => {
+    const res = await fetch("/api/memory/reset", { method: "POST" });
+    if (res.ok) { S.memory = await res.json(); S.lessonsLive = []; requestRender(); }
+  });
+  await refreshMemory();
+  renderAll();
+}
+
+// ------------------------------------------------------------ replay mode
+let replay = null, timer = null;
+function play(evt) {
+  if (evt) evt.preventDefault();
+  clearTimeout(timer);
+  const run = replay.runs.find((r) => r.id === $("runSel").value) || replay.runs[0];
+  const rate = Number($("rate").value) || 1;
+  const startWall = performance.now();
+  const events = run.events;
+  S = blankState();
+  S.clock = () => Math.min((performance.now() - startWall) / 1000 * rate, events[events.length - 1].t);
+  let i = 0;
+  $("playBtn").textContent = "Restart";
+  const step = () => {
+    const t = (performance.now() - startWall) / 1000 * rate;
+    while (i < events.length && events[i].t <= t) handleEvent(events[i++]);
+    if (i < events.length) timer = setTimeout(step, 25);
+    else $("playBtn").textContent = "Play again";
+  };
+  step();
+}
+async function initReplay(reason) {
+  $("replayControls").hidden = false;
+  try {
+    const res = await fetch("replay.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    replay = await res.json();
+  } catch (_) {
+    showNotice(reason === "file"
+      ? "This page needs a server to load its recording. Run <code>python -m cogniweave ui</code> for the live version, or serve this folder with <code>python -m http.server</code>."
+      : "No recording was found next to this page. Create one with <code>python -m cogniweave ui --export docs/demo</code>.", true);
+    renderAll();
+    return;
+  }
+  $("runSel").innerHTML = replay.runs.map((r) => `<option value="${esc(r.id)}">${esc(r.label)}</option>`).join("");
+  $("replayControls").addEventListener("submit", play);
+  $("runSel").addEventListener("change", () => play());
+  showNotice("You are watching a recorded run made with the offline mock model. To run the team yourself: <code>pip install -e .</code> then <code>python -m cogniweave ui</code>.");
+  play();
+}
+
+window.addEventListener("resize", requestRender);
+(async () => {
+  const forceReplay = new URLSearchParams(location.search).has("replay");
+  if (location.protocol === "file:") return initReplay("file");
+  if (!forceReplay) {
+    try {
+      const res = await fetch("/api/health", { cache: "no-store" });
+      if (res.ok && (await res.json()).mode === "live") return initLive();
+    } catch (_) { /* static hosting */ }
+  }
+  initReplay("static");
+})();
+</script>
+</body>
+</html>

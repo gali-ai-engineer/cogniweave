@@ -35,7 +35,7 @@ Repository = "https://github.com/gali-ai-engineer/cogniweave"
 include = ["cogniweave*"]
 
 [tool.setuptools.package-data]
-cogniweave = ["data/corpus/*.md"]
+cogniweave = ["data/corpus/*.md", "ui/static/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

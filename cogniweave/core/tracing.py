@@ -7,12 +7,13 @@ can be exported as JSON (for dashboards) or as a Mermaid sequence diagram
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import time
 import uuid
 from collections import defaultdict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
@@ -49,15 +50,29 @@ class Tracer:
         self.spans: list[Span] = []
         self.usage: dict[str, dict[str, int]] = defaultdict(lambda: {"calls": 0, "input_tokens": 0, "output_tokens": 0})
         self._t0 = time.perf_counter()
+        self._listeners: list[Callable[[str, Span], None]] = []
 
-    def _now(self) -> float:
+    def now(self) -> float:
+        """Seconds since the tracer was created."""
         return time.perf_counter() - self._t0
+
+    _now = now
+
+    def subscribe(self, listener: Callable[[str, Span], None]) -> None:
+        """Receive ``("start" | "end" | "event", span)`` as the run happens (used by the live UI)."""
+        self._listeners.append(listener)
+
+    def _emit(self, kind: str, span: Span) -> None:
+        for listener in self._listeners:
+            with contextlib.suppress(Exception):  # an observer must never break the run
+                listener(kind, span)
 
     @asynccontextmanager
     async def span(self, name: str, agent: str | None = None, **attrs: Any) -> AsyncIterator[Span]:
         span = Span(name, agent, self._now(), parent_id=_current_span.get(), attrs=dict(attrs))
         self.spans.append(span)
         token = _current_span.set(span.id)
+        self._emit("start", span)
         try:
             yield span
         except BaseException as exc:
@@ -67,11 +82,13 @@ class Tracer:
         finally:
             span.end = self._now()
             _current_span.reset(token)
+            self._emit("end", span)
 
     def event(self, name: str, agent: str | None = None, **attrs: Any) -> Span:
         now = self._now()
         span = Span(name, agent, now, parent_id=_current_span.get(), end=now, attrs=dict(attrs))
         self.spans.append(span)
+        self._emit("event", span)
         return span
 
     # --------------------------------------------------------------- budgets

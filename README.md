@@ -11,8 +11,24 @@ Most agent demos are a prompt chain with a for-loop. `cogniweave` treats each ag
 
 ```bash
 pip install -e ".[dev]"
-cogniweave run --pattern hierarchical --usage    # no API key needed
+python -m cogniweave ui                          # live UI in your browser, no API key needed
+python -m cogniweave run --pattern hierarchical  # or the same thing in the terminal
 ```
+
+**[▶ Watch a recorded run in your browser](https://gali-ai-engineer.github.io/cogniweave/demo/)** (no install)
+
+![cogniweave live UI: two researchers work in parallel, the critic sends the draft back, the writer learns a lesson and the revision is accepted](docs/images/ui.png)
+
+---
+
+## Live UI
+
+`python -m cogniweave ui` opens a local console that streams the run as it happens. Each agent is a thread on **the loom**: its work is drawn along a time axis, parallel tasks get their own sub-threads, curves show hand-offs, and diamonds mark lessons learned. Alongside it you see the plan graph (or the blackboard's turn-by-turn choices, or the debate rounds), a **critic review log** showing which issues each revision fixed, left open or introduced, every post on the shared board, what the team remembers, the cited answer with a clear accepted / not accepted verdict, and per-agent token cost.
+
+- **Zero dependencies.** It uses the standard-library HTTP server and Server-Sent Events, so it runs on locked-down machines where tools like Streamlit can't load their compiled extensions.
+- **Memory carries over between runs.** Run the same question twice and watch the second run skip the revision. "Clear memory" resets it.
+- **Recorded demo for GitHub Pages.** `python -m cogniweave ui --export docs/demo` records five runs into `docs/demo/replay.json`; the same page plays them back with no server. To publish: *Settings → Pages → Deploy from a branch → `main` / `docs`*, then open `/cogniweave/demo/`.
+- The UI is a thin observer: the engine emits trace spans and blackboard posts through `Tracer.subscribe()` and `Blackboard.subscribe()`, and the page only renders them.
 
 ---
 
@@ -180,7 +196,8 @@ git clone https://github.com/gali-ai-engineer/cogniweave && cd cogniweave
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-make test                                  # 48 tests, offline, < 1 s
+make test                                  # 53 tests, offline, ~2 s
+python -m cogniweave ui                    # live UI at http://127.0.0.1:8765
 cogniweave run --pattern blackboard        # offline mock
 cogniweave run "Your question" --pattern debate --mermaid
 ```
@@ -238,11 +255,12 @@ cogniweave/
 ├── core/            CognitiveAgent (ReAct + Reflexion) · tools · blackboard · tracing
 ├── orchestration/   plan DAG · executor · hierarchical · blackboard · debate · sequential
 ├── adapters/        LangGraph StateGraph adapter
+├── ui/              stdlib web server (SSE) + single-file live/replay page
 ├── data/corpus/     knowledge base used by the research demo
 ├── crew.py          research crew and debate panel factories
 ├── runner.py        run_pattern() — one entry point for every pattern
 └── cli.py           `cogniweave run | memory`
-examples/  tests/  docs/ARCHITECTURE.md
+examples/  tests/  docs/ARCHITECTURE.md  docs/demo/ (GitHub Pages replay)
 ```
 
 ## Roadmap
