@@ -15,8 +15,6 @@ python -m cogniweave ui                          # live UI in your browser, no A
 python -m cogniweave run --pattern hierarchical  # or the same thing in the terminal
 ```
 
-**[▶ Watch a recorded run in your browser](https://gali-ai-engineer.github.io/cogniweave/demo/)** (no install)
-
 ![cogniweave live UI: two researchers work in parallel, the critic sends the draft back, the writer learns a lesson and the revision is accepted](docs/images/ui.png)
 
 ---
@@ -27,7 +25,7 @@ python -m cogniweave run --pattern hierarchical  # or the same thing in the term
 
 - **Zero dependencies.** It uses the standard-library HTTP server and Server-Sent Events, so it runs on locked-down machines where tools like Streamlit can't load their compiled extensions.
 - **Memory carries over between runs.** Run the same question twice and watch the second run skip the revision. "Clear memory" resets it.
-- **Recorded demo for GitHub Pages.** `python -m cogniweave ui --export docs/demo` records five runs into `docs/demo/replay.json`; the same page plays them back with no server. To publish: *Settings → Pages → Deploy from a branch → `main` / `docs`*, then open `/cogniweave/demo/`.
+- **Recorded replay, no server logic needed.** `python -m cogniweave ui --export docs/demo` records five runs into `docs/demo/replay.json`, and the same page plays them back from any static host. To watch it locally: `python -m http.server -d docs/demo`, then open http://127.0.0.1:8000.
 - The UI is a thin observer: the engine emits trace spans and blackboard posts through `Tracer.subscribe()` and `Blackboard.subscribe()`, and the page only renders them.
 
 ---
@@ -260,7 +258,7 @@ cogniweave/
 ├── crew.py          research crew and debate panel factories
 ├── runner.py        run_pattern() — one entry point for every pattern
 └── cli.py           `cogniweave run | memory`
-examples/  tests/  docs/ARCHITECTURE.md  docs/demo/ (GitHub Pages replay)
+examples/  tests/  docs/ARCHITECTURE.md  docs/demo/ (recorded replay)
 ```
 
 ## Roadmap
