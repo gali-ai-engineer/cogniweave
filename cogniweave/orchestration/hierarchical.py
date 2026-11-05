@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from ..crew import Crew
 from .executor import DAGExecutor, TaskResult
-from .plan import Plan, PlanTask, Review, extract_json
+from .plan import Plan, PlanTask, Review, extract_json, revision_log, stalled
 from .result import RunResult
 
 
@@ -114,13 +114,18 @@ class HierarchicalOrchestrator:
             plan = await self.make_plan(goal)
             results = await self.execute(plan)
             final = results[plan.sinks()[-1].id]
-            draft, review, revisions = final.content, None, 0
+            draft, review, revisions, reviews = final.content, None, 0, []
             if final.ok and "critic" in self.crew.agents:
                 review = await self.review(goal, draft)
+                reviews.append(review)
                 while review.score < self.accept_threshold and revisions < self.max_revisions:
                     revisions += 1
                     draft = await self.revise(final, goal, review)
                     review = await self.review(goal, draft)
+                    reviews.append(review)
+                    if stalled(revision_log(reviews)):  # a rewording that fixed nothing: stop, don't loop
+                        self.tracer.event("revision.stalled", kind="note", text="revision fixed nothing, stopping")
+                        break
                 if final.output:
                     self.crew[final.task.role].learn(final.output.strategy, review.score)
         return RunResult(
@@ -135,5 +140,7 @@ class HierarchicalOrchestrator:
             extra={
                 "task_results": {k: v.content for k, v in results.items()},
                 "follow_ups": [k for k, v in results.items() if v.followed_up],
+                "revision_log": revision_log(reviews),
+                "unresolved_issues": review.issues if review and review.score < self.accept_threshold else [],
             },
         )

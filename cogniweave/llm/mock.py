@@ -17,6 +17,7 @@ from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
+from ..cognition.embeddings import tokenize
 from .base import LLMResponse, Message, estimate_tokens
 
 Handler = Callable[[list[Message], dict[str, Any]], str]
@@ -66,6 +67,41 @@ def _is_tradeoff(claim: str) -> bool:
     return any(w in low for w in TRADEOFF_WORDS)
 
 
+# Words too common in this domain to say whether a claim is on topic.
+GENERIC_TERMS = frozenset(
+    tokenize(
+        "agent agents ai llm llms model models system systems language better best good should use using "
+        "make making different between versus way ways work works thing things"
+    )
+)
+
+
+def key_terms(goal: str) -> set[str]:
+    """The words in the question that actually distinguish it."""
+    return set(tokenize(goal)) - GENERIC_TERMS
+
+
+def relevance(text: str, terms: set[str]) -> float:
+    """Share of the question's key terms that a claim mentions (1.0 when there are none to check)."""
+    if not terms:
+        return 1.0
+    return len(terms & set(tokenize(text))) / len(terms)
+
+
+def _rank(claims: list[tuple[str, str]], terms: set[str]) -> list[tuple[str, str]]:
+    """Most relevant first; retrieval order breaks ties."""
+    return sorted(claims, key=lambda c: -relevance(c[0], terms))
+
+
+def _section(markdown: str, heading: str) -> str:
+    m = re.search(rf"^## {re.escape(heading)}\s*$(.*?)(?=^## |\Z)", markdown, re.M | re.S)
+    return m.group(1) if m else ""
+
+
+def _bullets(text: str) -> list[str]:
+    return [ln.strip()[2:].strip() for ln in text.splitlines() if ln.strip().startswith("- ")]
+
+
 # --------------------------------------------------------------------- handlers
 def _planner(messages: list[Message], meta: dict[str, Any]) -> str:
     prompt = messages[0].content
@@ -112,10 +148,17 @@ def _planner(messages: list[Message], meta: dict[str, Any]) -> str:
 
 
 def _researcher(messages: list[Message], meta: dict[str, Any]) -> str:
-    task = tag(messages[0].content, "task")
+    prompt = messages[0].content
+    task, goal = tag(prompt, "task"), tag(prompt, "goal")
     observations = [m.content for m in messages if m.role == "user" and m.content.startswith("OBSERVATION:")]
     if not observations:
-        args = json.dumps({"query": task, "k": 4})
+        # Search for the question itself; the task wording only decides the angle.
+        angle = " risks costs limitations" if any(w in task.lower() for w in ("risk", "cost", "fail")) else ""
+        terms = key_terms(goal)
+        # A second, deeper attempt searches only the question's distinctive terms.
+        focused = task.startswith("Deepen") and terms
+        query = " ".join(sorted(terms)) if focused else ((goal + angle) if goal else task)
+        args = json.dumps({"query": query, "k": 4})
         return f"THOUGHT: I need evidence from the knowledge base before answering.\nACTION: corpus_search {args}"
     hits = OBS_LINE.findall("\n".join(observations))
     bullets, seen = [], set()
@@ -124,14 +167,17 @@ def _researcher(messages: list[Message], meta: dict[str, Any]) -> str:
             if s not in seen:
                 seen.add(s)
                 bullets.append(f"- {s} [{src}]")
-    confidence = 0.85 if len(hits) >= 2 else 0.35
+    # Metacognition: confident only if the evidence actually mentions what was asked.
+    on_topic = [h for h in hits if relevance(h[1], key_terms(goal)) > 0]
+    confidence = 0.85 if len(hits) >= 2 and on_topic else 0.35
     body = "\n".join(bullets) or "- No relevant evidence was found in the knowledge base. [none]"
     return f"FINDINGS:\n{body}\nCONFIDENCE: {confidence}"
 
 
 def _analyst(messages: list[Message], meta: dict[str, Any]) -> str:
-    claims = _dedupe(CITED_BULLET.findall(tag(messages[0].content, "context")))
-    claims = [c for c in claims if c[1] != "none"]
+    prompt = messages[0].content
+    claims = _dedupe(CITED_BULLET.findall(tag(prompt, "context")))
+    claims = _rank([c for c in claims if c[1] != "none"], key_terms(tag(prompt, "goal")))
     findings = [c for c in claims if not _is_tradeoff(c[0])][:6]
     tradeoffs = [c for c in claims if _is_tradeoff(c[0])][:6]
     lines = ["## Analysis", "### Key findings"]
@@ -146,35 +192,89 @@ def _writer(messages: list[Message], meta: dict[str, Any]) -> str:
     prompt = messages[0].content
     goal = tag(prompt, "goal") or tag(prompt, "task")
     guidance = (tag(prompt, "feedback") + " " + tag(prompt, "lessons")).lower()
-    claims = _dedupe(CITED_BULLET.findall(tag(prompt, "context")))
-    findings = [c for c in claims if not _is_tradeoff(c[0])]
-    tradeoffs = [c for c in claims if _is_tradeoff(c[0])]
+    terms = key_terms(goal)
+    claims = _rank([c for c in _dedupe(CITED_BULLET.findall(tag(prompt, "context"))) if c[1] != "none"], terms)
+    if "do not address the question" in guidance:  # critic flagged off-topic findings: drop them, don't reword
+        claims = [c for c in claims if relevance(c[0], terms) > 0]
+    findings = [c for c in claims if not _is_tradeoff(c[0])][:5]
+    tradeoffs = [c for c in claims if _is_tradeoff(c[0])][:5]
+    shown = findings + tradeoffs
     out = [f"# {goal.rstrip('?')}", "", "## Executive summary"]
     summary = [f"{c} [{s}]" for c, s in (findings[:1] + tradeoffs[:1])]
-    out.append(" ".join(summary) or "The available evidence was insufficient to answer confidently.")
-    out += ["", "## Key findings", *[f"- {c} [{s}]" for c, s in findings[:5]]]
-    out += ["", "## Trade-offs", *[f"- {c} [{s}]" for c, s in tradeoffs[:5]]]
+    out.append(
+        " ".join(summary)
+        or "The knowledge base has no evidence that directly answers this question, so no answer is given."
+    )
+    out += ["", "## Key findings", *([f"- {c} [{s}]" for c, s in findings] or ["- No direct evidence found."])]
+    out += ["", "## Trade-offs", *([f"- {c} [{s}]" for c, s in tradeoffs] or ["- No direct evidence found."])]
+    docs = sorted({s.split("#")[0] for _, s in shown})
     if "limitation" in guidance:
-        out += [
-            "",
-            "## Limitations",
-            "- Evidence comes from a fixed local corpus, so recent developments may be missing.",
-            "- Claims were not independently verified beyond their cited source.",
-        ]
-    sources = sorted({s.split("#")[0] for _, s in claims if s != "none"})
-    out += ["", "## Sources", *[f"- {s}" for s in sources]]
+        out += ["", "## Limitations", *_specific_limitations(shown, docs, terms)]
+    out += ["", "## Sources", *[f"- {d}" for d in docs]]  # only documents actually cited above
     return "\n".join(out) + "\nCONFIDENCE: 0.8"
 
 
+def _specific_limitations(shown: list[tuple[str, str]], docs: list[str], terms: set[str]) -> list[str]:
+    """Limitations about *this* answer's evidence, not boilerplate."""
+    lines = []
+    if terms:
+        on_topic = sum(1 for c, _ in shown if relevance(c, terms) > 0)
+        named = ", ".join(sorted(terms)[:4])
+        if not shown:
+            lines.append(f"- No document in the knowledge base mentions {named}.")
+        elif on_topic == len(shown):
+            lines.append(f"- All {len(shown)} cited findings mention {named}, but they come from a small corpus.")
+        else:
+            lines.append(
+                f"- Only {on_topic} of the {len(shown)} cited findings directly mention {named}; "
+                "the rest is supporting context."
+            )
+    counts = Counter(s.split("#")[0] for _, s in shown)
+    if counts:
+        top, n = counts.most_common(1)[0]
+        if n > len(shown) / 2:
+            lines.append(f"- {n} of {len(shown)} findings come from {top} alone, so they are not cross-checked.")
+    lines.append(
+        f"- All evidence comes from {len(docs)} local document(s) ({', '.join(docs) or 'none'}); "
+        "nothing newer or external was checked."
+    )
+    return lines
+
+
 def _critic(messages: list[Message], meta: dict[str, Any]) -> str:
-    draft = tag(messages[0].content, "context")
+    """Checks substance as well as structure, so a reworded draft cannot pass."""
+    prompt = messages[0].content
+    draft, terms = tag(prompt, "context"), key_terms(tag(prompt, "goal"))
     issues = []
+    cited = {src.split("#")[0] for src in re.findall(r"\[([^\]]*\.md[^\]]*)\]", draft)}
+
+    # 1. structure and grounding
     if "## Sources" not in draft:
         issues.append("Add a '## Sources' section listing every cited document.")
     if len(re.findall(r"\[[^\]]*\.md[^\]]*\]", draft)) < 3:
         issues.append("Ground more claims with inline citations (at least three).")
+
+    # 2. every listed source must actually be cited
+    uncited = sorted(set(_bullets(_section(draft, "Sources"))) - cited)
+    if uncited:
+        issues.append(f"Sources are listed but never cited: {', '.join(uncited)}. Cite them or remove them.")
+
+    # 3. the findings must answer *this* question
+    claims = CITED_BULLET.findall(draft)
+    off_topic = [c for c, _ in claims if relevance(c, terms) == 0]
+    if terms and claims and len(off_topic) / len(claims) > 0.4:
+        issues.append(
+            f"{len(off_topic)} of {len(claims)} findings do not address the question "
+            f"(none mention {', '.join(sorted(terms))}). Drop them rather than rewording them."
+        )
+
+    # 4. limitations must be about this answer, not boilerplate
+    limitations = _section(draft, "Limitations")
     if "## Limitations" not in draft:
-        issues.append("Add a '## Limitations' section that states scope and evidence gaps.")
+        issues.append("Add a '## Limitations' section that states the specific evidence gaps for this question.")
+    elif not any(re.search(r"\d|\.md", line) or relevance(line, terms) > 0 for line in _bullets(limitations)):
+        issues.append("The limitations are generic. Name the specific evidence gaps for this question.")
+
     score = round(max(0.0, 1.0 - 0.25 * len(issues)), 2)
     return json.dumps({"score": score, "verdict": "accept" if not issues else "revise", "issues": issues})
 

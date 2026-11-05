@@ -35,7 +35,9 @@ ROLE_INSTRUCTIONS = {
     "critic": (
         "Review the draft in <context>. Reply with JSON only: "
         '{"score": float 0-1, "verdict": "accept"|"revise", "issues": [str]}. '
-        "Check grounding (inline citations), a Sources section, and an explicit Limitations section."
+        "Check that: claims carry inline [source] citations; every source listed under Sources is cited in the "
+        "body; most findings actually address the question; and the Limitations section names gaps specific "
+        "to this answer rather than generic caveats. A reworded draft with the same problems must not pass."
     ),
     "debater": (
         "Argue your persona's position on the question using the evidence in <context>. Format: 'POSITION: ...', "

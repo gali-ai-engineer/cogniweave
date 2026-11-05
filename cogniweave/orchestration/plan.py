@@ -174,3 +174,36 @@ class Review:
             return cls.from_dict(extract_json(text))
         except Exception:
             return cls(score=0.5, verdict="revise", issues=["Critic output was not valid JSON; treat as unreviewed."])
+
+
+def _issue_key(issue: str) -> str:
+    """Compare issues across rounds while ignoring counts ("8 of 9" vs "2 of 2")."""
+    return re.sub(r"\d+", "#", issue.lower())[:60]
+
+
+def revision_log(reviews: list[Review]) -> list[dict[str, Any]]:
+    """For each review after the first: which earlier issues were fixed, which remain, which are new.
+
+    This is how cogniweave tells a real fix from a rewording: an issue only counts
+    as fixed when the critic stops raising it.
+    """
+    log = []
+    for i in range(1, len(reviews)):
+        before = {_issue_key(x): x for x in reviews[i - 1].issues}
+        after = {_issue_key(x): x for x in reviews[i].issues}
+        log.append(
+            {
+                "revision": i,
+                "score_before": reviews[i - 1].score,
+                "score_after": reviews[i].score,
+                "fixed": [v for k, v in before.items() if k not in after],
+                "still_open": [v for k, v in after.items() if k in before],
+                "new": [v for k, v in after.items() if k not in before],
+            }
+        )
+    return log
+
+
+def stalled(log: list[dict[str, Any]]) -> bool:
+    """True when the latest revision fixed nothing and did not raise the score."""
+    return bool(log) and not log[-1]["fixed"] and log[-1]["score_after"] <= log[-1]["score_before"]

@@ -22,7 +22,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from ..llm.base import estimate_tokens
-from .embeddings import Embedder, HashingEmbedder, cosine
+from .embeddings import Embedder, HashingEmbedder, cosine, tokenize
 
 
 # ------------------------------------------------------------------ working
@@ -141,10 +141,21 @@ class Chunk:
 
 
 class SemanticMemory:
-    def __init__(self, embedder: Embedder | None = None) -> None:
+    """Hybrid retrieval: BM25 keyword scoring plus vector similarity.
+
+    BM25 weights rare, meaningful words ("blackboard", "episodic") far above
+    common ones ("agent", "should"), which pure vector similarity over a hashing
+    embedder does not. The vector half still helps when a neural embedder is
+    plugged in. ``alpha`` is the BM25 share of the final score.
+    """
+
+    def __init__(self, embedder: Embedder | None = None, *, alpha: float = 0.7, k1: float = 1.5, b: float = 0.75):
         self.embedder = embedder or HashingEmbedder()
+        self.alpha, self.k1, self.b = alpha, k1, b
         self.chunks: list[Chunk] = []
         self._vecs: list[list[float]] = []
+        self._tokens: list[list[str]] = []
+        self._df: dict[str, int] = {}
 
     def add_document(self, text: str, source: str) -> int:
         """Split on blank lines, drop markdown headings, index each paragraph."""
@@ -156,6 +167,10 @@ class SemanticMemory:
             chunk = Chunk(f"{source}#{added}", source, " ".join(body.split()))
             self.chunks.append(chunk)
             self._vecs.append(self.embedder.embed(chunk.text))
+            toks = tokenize(chunk.text)
+            self._tokens.append(toks)
+            for term in set(toks):
+                self._df[term] = self._df.get(term, 0) + 1
             added += 1
         return added
 
@@ -163,9 +178,34 @@ class SemanticMemory:
         paths = sorted(Path(directory).glob(pattern))
         return sum(self.add_document(p.read_text(encoding="utf-8"), p.name) for p in paths)
 
+    def _bm25(self, query_terms: list[str]) -> list[float]:
+        n = len(self.chunks)
+        avg_len = sum(len(t) for t in self._tokens) / n
+        scores = []
+        for toks in self._tokens:
+            tf = {}
+            for term in toks:
+                tf[term] = tf.get(term, 0) + 1
+            score = 0.0
+            for term in set(query_terms):
+                if term not in tf:
+                    continue
+                idf = math.log(1 + (n - self._df[term] + 0.5) / (self._df[term] + 0.5))
+                f = tf[term]
+                score += idf * f * (self.k1 + 1) / (f + self.k1 * (1 - self.b + self.b * len(toks) / avg_len))
+            scores.append(score)
+        return scores
+
     def search(self, query: str, k: int = 4, min_score: float = 0.05) -> list[tuple[Chunk, float]]:
+        if not self.chunks:
+            return []
         qv = self.embedder.embed(query)
-        scored = [(c, cosine(qv, v)) for c, v in zip(self.chunks, self._vecs, strict=True)]
+        bm25 = self._bm25(tokenize(query))
+        top = max(bm25) or 1.0
+        scored = [
+            (c, round(self.alpha * (s / top) + (1 - self.alpha) * max(0.0, cosine(qv, v)), 4))
+            for c, v, s in zip(self.chunks, self._vecs, bm25, strict=True)
+        ]
         return [p for p in sorted(scored, key=lambda p: p[1], reverse=True)[:k] if p[1] >= min_score]
 
 

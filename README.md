@@ -25,9 +25,9 @@ cogniweave run --pattern hierarchical --usage    # no API key needed
 | **Blackboard control** | `orchestration/blackboard_pattern.py` | No fixed plan — knowledge sources bid with activation scores and control emerges from shared state (Hearsay-II) |
 | **Multi-agent debate** | `orchestration/debate.py` | Persona agents argue, read each other and rebut; a judge aggregates (Du et al., 2023) |
 | **Reflexion loop** | `core/agent.py` `reflect()` | Critic feedback becomes a stored lesson; the lesson is recalled on the next attempt *and the next run* |
-| **Four-part memory (CoALA)** | `cognition/memory.py` | Working (token-budgeted, salience eviction) · Episodic (relevance + recency + importance) · Semantic (vector search) · Procedural (UCB1 strategy bandit) |
+| **Four-part memory (CoALA)** | `cognition/memory.py` | Working (token-budgeted, salience eviction) · Episodic (relevance + recency + importance) · Semantic (hybrid BM25 + vector search) · Procedural (UCB1 strategy bandit) |
 | **Metacognition** | `executor.py` | Low-confidence results automatically trigger a deeper follow-up instead of flowing downstream |
-| **Grounded outputs** | `crew.py`, critic | Every claim carries a `[source#chunk]` citation; the critic rejects drafts without sources or limitations |
+| **A critic that can't be reworded past** | `llm/mock.py` critic, `plan.py` `revision_log()` | Checks citations, that every listed source is actually cited, that findings answer *this* question, and that limitations are specific. Each revision is logged as fixed / still open / new issues, and a revision that fixes nothing stops the loop instead of repeating |
 | **Guardrails & observability** | `core/tracing.py` | LLM-call and token budgets, retries with backoff, nested spans across asyncio tasks, JSON + Mermaid trace export |
 | **Provider independence** | `llm/` | Anthropic, OpenAI, Ollama, or a deterministic mock behind one 1-method interface |
 | **Framework interop** | `adapters/langgraph_adapter.py` | The same agents run inside a LangGraph `StateGraph` — the core doesn't depend on any framework |
@@ -180,7 +180,7 @@ git clone https://github.com/gali-ai-engineer/cogniweave && cd cogniweave
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-make test                                  # 38 tests, offline, < 1 s
+make test                                  # 48 tests, offline, < 1 s
 cogniweave run --pattern blackboard        # offline mock
 cogniweave run "Your question" --pattern debate --mermaid
 ```
@@ -226,7 +226,8 @@ Point the researcher at your own documents with `run_pattern(..., corpus_dir="pa
 - **One `LLMClient.complete()` method.** Adding a provider is ~30 lines; agents never import an SDK.
 - **Zero runtime dependencies.** The core is pure Python (stdlib only), so it installs anywhere — including locked-down laptops where compiled extensions are blocked. LLM-produced plans and reviews are still strictly validated, with error messages written to be fed back to the model.
 - **Errors are observations.** Tool exceptions are returned to the model as `ERROR: ...` so it can recover; LLM failures are retried with exponential backoff; budgets stop runaway runs.
-- **Dependency-free embeddings by default.** A signed hashing embedder keeps the repo installable anywhere; any object with `embed(text) -> list[float]` can replace it.
+- **Hybrid retrieval, dependency-free.** BM25 weights rare, meaningful words ("blackboard") above common ones ("agent", "should"), blended with a signed hashing embedder. Any object with `embed(text) -> list[float]` can replace the embedder for true semantic matching.
+- **Measure fixes, don't assume them.** A revision only counts as fixing an issue when the critic stops raising it, so `revision_log` separates genuine fixes from rewording.
 
 ## Project layout
 

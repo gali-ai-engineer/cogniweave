@@ -15,7 +15,7 @@ import asyncio
 from ..core.agent import CognitiveAgent
 from ..core.blackboard import Blackboard, Entry
 from ..crew import Crew
-from .plan import Review, extract_json
+from .plan import Review, extract_json, revision_log, stalled
 from .result import RunResult
 
 
@@ -109,7 +109,9 @@ class Writer(KnowledgeSource):
             return 0.0
         if not drafts or drafts[-1].id < analysis.id:
             return 0.7
-        return 0.7 if self._pending_critique(board) else 0.0
+        if not self._pending_critique(board) or stalled(revision_log(_reviews(board))):
+            return 0.0  # nothing to fix, or the last revision fixed nothing
+        return 0.7
 
     async def contribute(self, board: Blackboard, goal: str) -> None:
         analysis = board.latest("analysis")
@@ -127,6 +129,10 @@ class Writer(KnowledgeSource):
             refs=(analysis.id,) if analysis else (),
             tags=(out.strategy,),
         )
+
+
+def _reviews(board: Blackboard) -> list[Review]:
+    return [Review.from_json(e.content) for e in board.query("critique")]
 
 
 class Critic(KnowledgeSource):
@@ -202,5 +208,9 @@ class BlackboardOrchestrator:
             review=review,
             revisions=max(0, len(board.query("draft")) - 1),
             blackboard=board.snapshot(),
-            extra={"schedule": schedule},
+            extra={
+                "schedule": schedule,
+                "revision_log": revision_log(_reviews(board)),
+                "unresolved_issues": review.issues if review and review.score < self.accept_threshold else [],
+            },
         )

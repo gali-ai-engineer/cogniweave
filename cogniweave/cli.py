@@ -46,6 +46,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print("plan: " + " | ".join(f"{t.id}:{t.role}<-{','.join(t.depends_on) or '∅'}" for t in result.plan.tasks))
     if "schedule" in result.extra:
         print("schedule: " + " → ".join(result.extra["schedule"]))
+    for entry in result.extra.get("revision_log", []):
+        print(
+            f"revision {entry['revision']}: score {entry['score_before']} → {entry['score_after']} | "
+            f"fixed {len(entry['fixed'])}, still open {len(entry['still_open'])}, new {len(entry['new'])}"
+        )
+    for issue in result.extra.get("unresolved_issues", []):
+        print(f"unresolved: {issue}")
     if args.usage:
         print("\n" + result.tracer.usage_table())
     if args.trace_out:

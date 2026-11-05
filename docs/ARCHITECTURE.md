@@ -44,6 +44,14 @@ Episodes below a minimum relevance are excluded before ranking, so a high-import
 
 **Metacognitive follow-up:** if a researcher returns confidence below 0.5, it is asked once to deepen the investigation and the two outputs are merged.
 
+### Critique, revision and the fix-vs-reword question
+
+The critic returns a score and a list of concrete issues. It checks four things: inline citations; that every document listed under Sources is actually cited in the body; that most findings mention the question's distinctive terms (generic words like "agent" are ignored); and that the Limitations section names gaps specific to this answer (counts, sources or the question's terms) rather than generic caveats.
+
+`revision_log()` compares consecutive reviews and classifies each issue as **fixed** (no longer raised), **still open** or **new**, ignoring counts so "8 of 9 findings…" and "2 of 2 findings…" match. If a revision fixes nothing and does not raise the score, the orchestrator stops instead of looping and reports the remaining issues as `unresolved_issues`. This is the honest answer to "did it fix the problem or just rephrase it?": a rewording leaves the same issues open, and the log shows it.
+
+The writer responds to specific issues with specific changes: off-topic findings are dropped (not reworded), the Sources list is built only from documents cited above it, and limitations are written from the evidence actually used ("2 of 3 findings come from one document").
+
 ## 4. Blackboard control
 
 Each `KnowledgeSource` implements `activation(board) -> float` and `contribute(board, goal)`:
@@ -74,6 +82,7 @@ The mock LLM implements every role's protocol deterministically, which lets the 
 
 ## 8. Known limitations
 
-- The default hashing embedder is lexical; swap in a neural embedder for semantic recall on paraphrases.
+- Retrieval is keyword-based (BM25 plus a hashing embedder), so it misses synonyms: a question about how agents "remember past experiences" does not match passages about "episodic memory". The critic and writer then correctly report thin evidence rather than inventing an answer, but a neural embedder is the real fix.
+- The mock critic's relevance check is lexical too: a claim that shares a word with the question ("fixed task set" for a question about a "fixed plan") can pass. A real LLM critic judges meaning.
 - Episodic memory is unbounded; consolidation is on the roadmap.
 - The mock is protocol-faithful, not intelligent — quality claims must be measured with real providers.
