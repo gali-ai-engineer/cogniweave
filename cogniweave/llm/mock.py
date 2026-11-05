@@ -81,6 +81,26 @@ def key_terms(goal: str) -> set[str]:
     return set(tokenize(goal)) - GENERIC_TERMS
 
 
+def named_terms(goal: str, limit: int = 4) -> str:
+    """The question's distinctive words as the user wrote them (not their internal stems)."""
+    terms, words = key_terms(goal), []
+    for word in re.findall(r"[A-Za-z0-9][A-Za-z0-9-]*", goal):
+        stems = tokenize(word)
+        if stems and stems[0] in terms and word.lower() not in words:
+            words.append(word.lower())
+    return _join(words[:limit])
+
+
+def _join(items: list[str]) -> str:
+    if len(items) <= 1:
+        return "".join(items)
+    return ", ".join(items[:-1]) + " or " + items[-1]
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}" + ("" if n == 1 else "s")
+
+
 def relevance(text: str, terms: set[str]) -> float:
     """Share of the question's key terms that a claim mentions (1.0 when there are none to check)."""
     if not terms:
@@ -209,19 +229,20 @@ def _writer(messages: list[Message], meta: dict[str, Any]) -> str:
     out += ["", "## Trade-offs", *([f"- {c} [{s}]" for c, s in tradeoffs] or ["- No direct evidence found."])]
     docs = sorted({s.split("#")[0] for _, s in shown})
     if "limitation" in guidance:
-        out += ["", "## Limitations", *_specific_limitations(shown, docs, terms)]
+        out += ["", "## Limitations", *_specific_limitations(shown, docs, terms, named_terms(goal))]
     out += ["", "## Sources", *[f"- {d}" for d in docs]]  # only documents actually cited above
     return "\n".join(out) + "\nCONFIDENCE: 0.8"
 
 
-def _specific_limitations(shown: list[tuple[str, str]], docs: list[str], terms: set[str]) -> list[str]:
+def _specific_limitations(shown: list[tuple[str, str]], docs: list[str], terms: set[str], named: str) -> list[str]:
     """Limitations about *this* answer's evidence, not boilerplate."""
     lines = []
     if terms:
         on_topic = sum(1 for c, _ in shown if relevance(c, terms) > 0)
-        named = ", ".join(sorted(terms)[:4])
         if not shown:
             lines.append(f"- No document in the knowledge base mentions {named}.")
+        elif len(shown) == 1:
+            lines.append(f"- The answer rests on a single cited finding about {named}, which is thin evidence.")
         elif on_topic == len(shown):
             lines.append(f"- All {len(shown)} cited findings mention {named}, but they come from a small corpus.")
         else:
@@ -230,14 +251,16 @@ def _specific_limitations(shown: list[tuple[str, str]], docs: list[str], terms: 
                 "the rest is supporting context."
             )
     counts = Counter(s.split("#")[0] for _, s in shown)
-    if counts:
+    if len(shown) > 1:
         top, n = counts.most_common(1)[0]
         if n > len(shown) / 2:
-            lines.append(f"- {n} of {len(shown)} findings come from {top} alone, so they are not cross-checked.")
-    lines.append(
-        f"- All evidence comes from {len(docs)} local document(s) ({', '.join(docs) or 'none'}); "
-        "nothing newer or external was checked."
-    )
+            share = f"All {n}" if n == len(shown) else f"{n} of the {len(shown)}"
+            lines.append(f"- {share} findings come from {top} alone, so they are not cross-checked.")
+    if docs:
+        lines.append(
+            f"- All evidence comes from {_plural(len(docs), 'local document')} ({', '.join(docs)}); "
+            "nothing newer or external was checked."
+        )
     return lines
 
 
@@ -265,7 +288,7 @@ def _critic(messages: list[Message], meta: dict[str, Any]) -> str:
     if terms and claims and len(off_topic) / len(claims) > 0.4:
         issues.append(
             f"{len(off_topic)} of {len(claims)} findings do not address the question "
-            f"(none mention {', '.join(sorted(terms))}). Drop them rather than rewording them."
+            f"(none mention {named_terms(tag(prompt, 'goal'), limit=6)}). Drop them rather than rewording them."
         )
 
     # 4. limitations must be about this answer, not boilerplate
