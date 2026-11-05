@@ -38,7 +38,7 @@ Episodes below a minimum relevance are excluded before ranking, so a high-import
 
 ## 3. Plans and execution
 
-`Plan` is a Pydantic model whose validator rejects duplicate ids, unknown dependencies, self-dependencies and cycles (Kahn's algorithm). `HierarchicalOrchestrator` additionally rejects roles that are not in the crew. On any validation error the planner receives the error text as `<feedback>` and tries again (default three attempts) before a safe two-task fallback plan is used.
+`Plan` is a plain dataclass whose validation (run on construction) rejects missing fields, duplicate ids, unknown dependencies, self-dependencies and cycles (Kahn's algorithm). `HierarchicalOrchestrator` additionally rejects roles that are not in the crew. On any validation error the planner receives the error text as `<feedback>` and tries again (default three attempts) before a safe two-task fallback plan is used.
 
 `DAGExecutor` starts a coroutine per task. Each waits on its dependencies' `asyncio.Event`s, then acquires a semaphore (default concurrency 4) to call its agent. This starts every task at the earliest possible moment — better than wave-by-wave execution when task durations differ. Failures are retried; a failed task still releases its dependents, which receive "(task failed: …)" in their context rather than hanging.
 

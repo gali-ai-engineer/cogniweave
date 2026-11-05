@@ -1,27 +1,74 @@
-"""Plans are validated DAGs of role-assigned tasks."""
+"""Plans are validated DAGs of role-assigned tasks.
+
+Pure-Python validation (no compiled dependencies): LLM output is the place
+where malformed data actually appears, so every field is checked explicitly
+and errors are written to be fed straight back to the model for self-repair.
+"""
 
 from __future__ import annotations
 
 import json
 import re
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+
+def _require_str(data: dict[str, Any], key: str, where: str) -> str:
+    value = data.get(key)
+    if not isinstance(value, (str, int)) or str(value).strip() == "":
+        raise ValueError(f"{where}: field {key!r} is required and must be a non-empty string")
+    return str(value)
 
 
-class PlanTask(BaseModel):
+@dataclass
+class PlanTask:
     id: str
     description: str
     role: str
-    depends_on: list[str] = Field(default_factory=list)
+    depends_on: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: Any) -> PlanTask:
+        if not isinstance(data, dict):
+            raise ValueError("each task must be a JSON object")
+        where = f"task {data.get('id', '?')}"
+        deps = data.get("depends_on") or []
+        if not isinstance(deps, list):
+            raise ValueError(f"{where}: depends_on must be a list of task ids")
+        return cls(
+            _require_str(data, "id", where),
+            _require_str(data, "description", where),
+            _require_str(data, "role", where),
+            [str(d) for d in deps],
+        )
 
 
-class Plan(BaseModel):
+@dataclass
+class Plan:
     goal: str
-    tasks: list[PlanTask] = Field(min_length=1)
+    tasks: list[PlanTask]
 
-    @model_validator(mode="after")
-    def _validate_dag(self) -> Plan:
+    def __post_init__(self) -> None:
+        self._validate_dag()
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Plan:
+        if not isinstance(data, dict):
+            raise ValueError("plan must be a JSON object")
+        tasks = data.get("tasks")
+        if not isinstance(tasks, list) or not tasks:
+            raise ValueError("plan must contain a non-empty 'tasks' list")
+        return cls(str(data.get("goal", "")), [PlanTask.from_dict(t) for t in tasks])
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict())
+
+    def _validate_dag(self) -> None:
+        if not self.tasks:
+            raise ValueError("plan must contain at least one task")
         ids = [t.id for t in self.tasks]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate task ids")
@@ -33,7 +80,6 @@ class Plan(BaseModel):
             if t.id in t.depends_on:
                 raise ValueError(f"task {t.id} depends on itself")
         self.topo_order()  # raises on cycles
-        return self
 
     def topo_order(self) -> list[PlanTask]:
         """Kahn's algorithm; stable with respect to the declared order."""
@@ -89,14 +135,42 @@ def extract_json(text: str) -> Any:
     return json.loads(candidate)
 
 
-class Review(BaseModel):
-    score: float = Field(ge=0.0, le=1.0)
+@dataclass
+class Review:
+    score: float
     verdict: str = "revise"
-    issues: list[str] = Field(default_factory=list)
+    issues: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.score, bool) or not isinstance(self.score, (int, float)):
+            raise ValueError("score must be a number")
+        if not 0.0 <= self.score <= 1.0:
+            raise ValueError("score must be between 0 and 1")
+        self.score = float(self.score)
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Review:
+        if not isinstance(data, dict):
+            raise ValueError("review must be a JSON object")
+        issues = data.get("issues") or []
+        if not isinstance(issues, list):
+            issues = [str(issues)]
+        return cls(data.get("score"), str(data.get("verdict", "revise")), [str(i) for i in issues])
+
+    @classmethod
+    def from_json(cls, text: str) -> Review:
+        return cls.from_dict(json.loads(text))
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict())
 
     @classmethod
     def parse(cls, text: str) -> Review:
+        """Lenient parse of an LLM reply; unparseable critiques count as unreviewed."""
         try:
-            return cls.model_validate(extract_json(text))
+            return cls.from_dict(extract_json(text))
         except Exception:
             return cls(score=0.5, verdict="revise", issues=["Critic output was not valid JSON; treat as unreviewed."])

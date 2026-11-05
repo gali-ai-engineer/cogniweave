@@ -46,7 +46,7 @@ class HierarchicalOrchestrator:
     def _validate(self, data: object, goal: str) -> Plan:
         if isinstance(data, dict):
             data.setdefault("goal", goal)
-        plan = Plan.model_validate(data)
+        plan = Plan.from_dict(data)
         unknown = {t.role for t in plan.tasks} - set(self.worker_roles)
         if unknown:
             raise ValueError(f"unknown roles {sorted(unknown)}; allowed: {self.worker_roles}")
@@ -78,7 +78,7 @@ class HierarchicalOrchestrator:
                     self.tracer.event(
                         "plan.accepted", kind="note", text=f"plan with {len(plan.tasks)} tasks", attempt=attempt
                     )
-                    await self.crew.blackboard.post("plan", plan.model_dump_json(), planner.name)
+                    await self.crew.blackboard.post("plan", plan.to_json(), planner.name)
                     return plan
                 except Exception as exc:  # self-repair: feed the validation error back
                     feedback = f"Your previous plan was invalid: {exc}. Return corrected JSON only."
@@ -94,13 +94,13 @@ class HierarchicalOrchestrator:
         out = await self.crew["critic"].run("Review the draft report against the goal.", goal=goal, context=draft)
         review = Review.parse(out.content)
         await self.crew.blackboard.post(
-            "critique", review.model_dump_json(), "critic", confidence=review.score, tags=(review.verdict,)
+            "critique", review.to_json(), "critic", confidence=review.score, tags=(review.verdict,)
         )
         return review
 
     async def revise(self, final: TaskResult, goal: str, review: Review) -> str:
         agent = self.crew[final.task.role]
-        feedback = review.model_dump_json()
+        feedback = review.to_json()
         await agent.reflect(final.task.description, feedback)
         out = await agent.run(final.task.description, goal=goal, context=final.context, feedback=feedback)
         final.output = out

@@ -143,7 +143,7 @@ class Critic(KnowledgeSource):
         review = Review.parse(out.content)
         await board.post(
             "critique",
-            review.model_dump_json(),
+            review.to_json(),
             self.agent.name,
             confidence=review.score,
             refs=(draft.id,),
@@ -168,7 +168,7 @@ class BlackboardOrchestrator:
     def _accepted(self, board: Blackboard) -> Review | None:
         draft, critique = board.latest("draft"), board.latest("critique")
         if draft and critique and draft.id in critique.refs:
-            review = Review.model_validate_json(critique.content)
+            review = Review.from_json(critique.content)
             if review.score >= self.accept_threshold:
                 return review
         return None
@@ -191,7 +191,7 @@ class BlackboardOrchestrator:
 
         draft = board.latest("draft")
         critique = board.latest("critique")
-        review = Review.model_validate_json(critique.content) if critique else None
+        review = Review.from_json(critique.content) if critique else None
         if draft and review:
             self.crew["writer"].learn(next(iter(draft.tags), ""), review.score)
         return RunResult(

@@ -45,13 +45,13 @@ def build_research_graph(crew: Crew, *, max_revisions: int = 2, accept_threshold
 
     async def review_node(state: ResearchState) -> ResearchState:
         review = await orch.review(state["goal"], state["draft"])
-        return {"review": review.model_dump()}
+        return {"review": review.to_dict()}
 
     async def revise_node(state: ResearchState) -> ResearchState:
         from ..orchestration.plan import Review
 
         final = state["results"][state["final_id"]]
-        draft = await orch.revise(final, state["goal"], Review.model_validate(state["review"]))
+        draft = await orch.revise(final, state["goal"], Review.from_dict(state["review"]))
         return {"draft": draft, "revisions": state.get("revisions", 0) + 1}
 
     def route(state: ResearchState) -> str:

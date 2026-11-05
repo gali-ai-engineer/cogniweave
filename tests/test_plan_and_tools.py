@@ -1,7 +1,6 @@
 import asyncio
 
 import pytest
-from pydantic import ValidationError
 
 from cogniweave.core.blackboard import Blackboard
 from cogniweave.core.tools import ToolRegistry, calculator, tool
@@ -10,7 +9,7 @@ from cogniweave.orchestration.plan import Plan, Review, extract_json
 
 
 def _plan(tasks):
-    return Plan.model_validate({"goal": "g", "tasks": tasks})
+    return Plan.from_dict({"goal": "g", "tasks": tasks})
 
 
 def test_plan_topological_order_and_levels():
@@ -41,10 +40,13 @@ def test_plan_topological_order_and_levels():
         ),
         ([{"id": "a", "role": "x", "description": "d", "depends_on": ["zzz"]}], "unknown"),
         ([{"id": "a", "role": "x", "description": "d"}, {"id": "a", "role": "x", "description": "d"}], "duplicate"),
+        ([{"id": "a", "description": "no role"}], "role"),
+        ([{"id": "a", "role": "x", "description": "d", "depends_on": "b"}], "depends_on"),
+        ([], "non-empty"),
     ],
 )
 def test_plan_rejects_invalid_dags(tasks, message):
-    with pytest.raises(ValidationError, match=message):
+    with pytest.raises(ValueError, match=message):
         _plan(tasks)
 
 
@@ -53,6 +55,13 @@ def test_extract_json_handles_fenced_and_bare():
     assert extract_json('prefix {"b": [1, 2]} suffix') == {"b": [1, 2]}
     with pytest.raises(ValueError):
         extract_json("no json here")
+
+
+def test_review_validates_score():
+    assert Review.from_json('{"score": 1, "issues": "one issue"}').issues == ["one issue"]
+    for bad in ('{"score": 1.5}', '{"score": "high"}', '{"verdict": "accept"}'):
+        with pytest.raises(ValueError):
+            Review.from_json(bad)
 
 
 def test_review_parse_falls_back_on_garbage():

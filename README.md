@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/gali-ai-engineer/cogniweave/actions/workflows/ci.yml/badge.svg)](https://github.com/gali-ai-engineer/cogniweave/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue)
-![Dependencies](https://img.shields.io/badge/core%20deps-pydantic%20only-brightgreen)
+![Dependencies](https://img.shields.io/badge/runtime%20deps-zero-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 Most agent demos are a prompt chain with a for-loop. `cogniweave` treats each agent as a small **cognitive system** — working memory with an attention budget, episodic / semantic / procedural long-term memory, a ReAct decision loop, metacognitive confidence and Reflexion-style learning — and then coordinates teams of them through **four interchangeable orchestration patterns**.
@@ -180,7 +180,7 @@ git clone https://github.com/gali-ai-engineer/cogniweave && cd cogniweave
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-make test                                  # 33 tests, offline, < 1 s
+make test                                  # 38 tests, offline, < 1 s
 cogniweave run --pattern blackboard        # offline mock
 cogniweave run "Your question" --pattern debate --mermaid
 ```
@@ -224,7 +224,7 @@ Point the researcher at your own documents with `run_pattern(..., corpus_dir="pa
 - **Framework-agnostic core, adapter for LangGraph.** Orchestration logic is plain asyncio so the mechanics are visible and testable; LangGraph is offered as a drop-in control-flow backend for checkpointing and streaming.
 - **Deterministic mock LLM.** The mock follows the same text protocols (ReAct `ACTION:` lines, JSON plans, JSON reviews, `CONFIDENCE:`) as real models, so CI exercises planning, tool use, repair, reflection and debate without API keys or flakiness.
 - **One `LLMClient.complete()` method.** Adding a provider is ~30 lines; agents never import an SDK.
-- **Pydantic only where it earns its place** — validating LLM-produced plans and reviews, which is where malformed output actually occurs.
+- **Zero runtime dependencies.** The core is pure Python (stdlib only), so it installs anywhere — including locked-down laptops where compiled extensions are blocked. LLM-produced plans and reviews are still strictly validated, with error messages written to be fed back to the model.
 - **Errors are observations.** Tool exceptions are returned to the model as `ERROR: ...` so it can recover; LLM failures are retried with exponential backoff; budgets stop runaway runs.
 - **Dependency-free embeddings by default.** A signed hashing embedder keeps the repo installable anywhere; any object with `embed(text) -> list[float]` can replace it.
 
