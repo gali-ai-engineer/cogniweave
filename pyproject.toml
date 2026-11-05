@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cogniweave"
+version = "0.1.0"
+description = "Multi-agent orchestration on a cognitive architecture: planning, blackboard, debate, Reflexion and four-part memory."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Bala Ajay Kumar Reddy Gali" }]
+keywords = ["llm", "agents", "multi-agent", "cognitive-architecture", "orchestration", "reflexion", "rag"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["pydantic>=2.5"]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+openai = ["openai>=1.40"]
+langgraph = ["langgraph>=0.2"]
+all = ["cogniweave[anthropic,openai,langgraph]"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+cogniweave = "cogniweave.cli:main"
+
+[project.urls]
+Repository = "https://github.com/gali-ai-engineer/cogniweave"
+
+[tool.setuptools.packages.find]
+include = ["cogniweave*"]
+
+[tool.setuptools.package-data]
+cogniweave = ["data/corpus/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["SIM905"]
